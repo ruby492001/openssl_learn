@@ -65,7 +65,7 @@ int main()
      }
 
 
-     crypt_wrapper::AlgorithmInfo info( crypt_wrapper::CA_Aes_256_Cbc );
+     crypt_wrapper::AlgorithmInfo info( crypt_wrapper::CA_Des_Ecb );
      crypt_wrapper::DecryptWrapper wrapper( info );
 
      try

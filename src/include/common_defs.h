@@ -32,5 +32,5 @@ const std::string src_path = "../../../../data/src.bin";
 const std::string crypted_path = "../../../../data/crypted.bin";
 const std::string decrypted_path = "../../../../data/decrypted.bin";
 const std::string info_path = "../../../../data/meta_info.bin";
-const std::string key = "08108fa01d84c921e5c0f1a79e6a3765";
+const std::string key = "12345678";
 }

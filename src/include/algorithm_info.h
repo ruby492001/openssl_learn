@@ -10,7 +10,8 @@ enum CryptAlgorithm
 {
      CA_Undefined,
      CA_Aes_256_Gcm,
-     CA_Aes_256_Cbc
+     CA_Aes_256_Cbc,
+     CA_Des_Ecb
 };
 
 
@@ -32,6 +33,7 @@ public:
 private:
      void init_aes_256_gcm();
      void init_aes_256_cbc();
+     void init_des_ecb();
 private:
      int key_size_ = 0;
      int block_size_ = 0;

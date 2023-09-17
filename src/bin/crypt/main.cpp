@@ -29,7 +29,7 @@ int main()
           return -1;
      }
 
-     crypt_wrapper::AlgorithmInfo alg( crypt_wrapper::CA_Aes_256_Cbc );
+     crypt_wrapper::AlgorithmInfo alg( crypt_wrapper::CA_Des_Ecb );
      crypt_wrapper::CryptWrapper wrapper( alg );
 
      try

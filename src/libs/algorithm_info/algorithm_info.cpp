@@ -22,6 +22,11 @@ AlgorithmInfo::AlgorithmInfo( crypt_wrapper::CryptAlgorithm algorithm )
                init_aes_256_cbc();
                break;
           }
+          case CA_Des_Ecb:
+          {
+               init_des_ecb();
+               break;
+          }
 
           default:
           {
@@ -114,6 +119,22 @@ void AlgorithmInfo::init_aes_256_cbc()
      else
      {
           chipper_ = chippers[ CA_Aes_256_Cbc ];
+     }
+     key_size_ = EVP_CIPHER_key_length( chipper_ );
+     block_size_ = EVP_CIPHER_block_size( chipper_ );
+     iv_size_ = EVP_CIPHER_iv_length( chipper_ );
+     auth_tag_size_ = 0;
+}
+
+void AlgorithmInfo::init_des_ecb()
+{
+     if( chippers.count( CA_Des_Ecb ) == 0 )
+     {
+          chipper_ = chippers.insert( { CA_Des_Ecb, EVP_des_ecb() } ).first->second;
+     }
+     else
+     {
+          chipper_ = chippers[ CA_Des_Ecb ];
      }
      key_size_ = EVP_CIPHER_key_length( chipper_ );
      block_size_ = EVP_CIPHER_block_size( chipper_ );
