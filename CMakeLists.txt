@@ -4,5 +4,5 @@ project( openssl_learn )
 
 include_directories( include )
 
-add_subdirectory( src/crypt )
-add_subdirectory( src/decrypt )
+add_subdirectory( src/bin )
+add_subdirectory( src/libs )
