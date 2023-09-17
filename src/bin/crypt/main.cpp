@@ -29,13 +29,13 @@ int main()
           return -1;
      }
 
-     crypt_wrapper::AlgorithmInfo alg( crypt_wrapper::CA_Aes_256_Gcm );
+     crypt_wrapper::AlgorithmInfo alg( crypt_wrapper::CA_Aes_256_Cbc );
      crypt_wrapper::CryptWrapper wrapper( alg );
 
      try
      {
           wrapper.init( crypt_wrapper::ba_from_string( default_values::key ) );
-          crypt_wrapper::binary_array inp_arr( 500, 0 );
+          crypt_wrapper::binary_array inp_arr( alg.get_block_size(), 0 );
           crypt_wrapper::binary_array out_arr;
 
           // шифруем файл

@@ -65,7 +65,7 @@ int main()
      }
 
 
-     crypt_wrapper::AlgorithmInfo info( crypt_wrapper::CA_Aes_256_Gcm );
+     crypt_wrapper::AlgorithmInfo info( crypt_wrapper::CA_Aes_256_Cbc );
      crypt_wrapper::DecryptWrapper wrapper( info );
 
      try
@@ -74,7 +74,7 @@ int main()
           wrapper.init( iv, crypt_wrapper::ba_from_string( default_values::key ) );
 
           // расшифровываем файл
-          crypt_wrapper::binary_array in_buf( 500, 0 );
+          crypt_wrapper::binary_array in_buf( info.get_block_size(), 0 );
           crypt_wrapper::binary_array out_buf;
           while( !crypted_file.eof() )
           {
@@ -82,7 +82,8 @@ int main()
                wrapper.decrypt_data( in_buf, out_buf );
                out_file.write( reinterpret_cast< char* >( out_buf.data() ), out_buf.size() );
           }
-          wrapper.final( auth_token );
+          out_buf = wrapper.final();
+          out_file.write( reinterpret_cast< char* >( out_buf.data() ), out_buf.size() );
      }
      catch ( const std::exception& ex )
      {

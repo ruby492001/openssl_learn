@@ -1,6 +1,6 @@
 #include "decrypt.h"
 #include "stdexcept"
-
+#include "iostream"
 
 namespace crypt_wrapper
 {
@@ -64,7 +64,7 @@ void DecryptWrapper::decrypt_data( const binary_array& inp, binary_array& out )
           throw std::runtime_error( "Not inited" );
      }
 
-     out.resize( inp.size() );
+     out.resize( inp.size() + info_.get_block_size() );
      int res_length = 0;
      if( 1 != EVP_DecryptUpdate( ctx, &out[ 0 ], &res_length, inp.data(), inp.size() ) )
      {
@@ -74,7 +74,7 @@ void DecryptWrapper::decrypt_data( const binary_array& inp, binary_array& out )
 }
 
 
-void DecryptWrapper::final( const binary_array& auth_tag )
+binary_array DecryptWrapper::final( const binary_array& auth_tag )
 {
      if( !ctx )
      {
@@ -92,14 +92,21 @@ void DecryptWrapper::final( const binary_array& auth_tag )
      }
 
      binary_array tag = auth_tag;
-     if( 1 != EVP_CIPHER_CTX_ctrl( ctx, info_.set_auth_tag_type(), tag.size(), static_cast< void* >( tag.data() ) ) )
+     if( !tag.empty() )
      {
-          throw std::runtime_error( "EVP_CIPHER_CTX_ctrl error" );
+          if( 1 != EVP_CIPHER_CTX_ctrl( ctx, info_.set_auth_tag_type(), tag.size(), static_cast< void* >( tag.data() ) ) )
+          {
+               throw std::runtime_error( "EVP_CIPHER_CTX_ctrl error" );
+          }
      }
-     int tmp = 0;
-     if( 1 != EVP_DecryptFinal( ctx, nullptr, &tmp ) )
+
+     binary_array res( info_.get_block_size(), 0 );
+     int size = res.size();
+     if( 1 != EVP_DecryptFinal( ctx, res.data(), &size ) )
      {
           throw std::runtime_error( "EVP_DecryptFinal error" );
      }
+     res.resize( size );
+     return res;
 }
 }

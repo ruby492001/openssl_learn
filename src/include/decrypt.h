@@ -20,7 +20,7 @@ public:
 
 
      void decrypt_data( const binary_array& inp, binary_array& out );
-     void final( const crypt_wrapper::binary_array& auth_tag = crypt_wrapper::binary_array() );
+     binary_array final( const crypt_wrapper::binary_array& auth_tag = crypt_wrapper::binary_array() );
 
 private:
      EVP_CIPHER_CTX* ctx = nullptr;

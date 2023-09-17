@@ -9,7 +9,8 @@ namespace crypt_wrapper
 enum CryptAlgorithm
 {
      CA_Undefined,
-     CA_Aes_256_Gcm
+     CA_Aes_256_Gcm,
+     CA_Aes_256_Cbc
 };
 
 
@@ -30,7 +31,7 @@ public:
      const EVP_CIPHER* get_chipper() const;
 private:
      void init_aes_256_gcm();
-
+     void init_aes_256_cbc();
 private:
      int key_size_ = 0;
      int block_size_ = 0;

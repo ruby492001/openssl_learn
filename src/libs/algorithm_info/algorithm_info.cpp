@@ -17,6 +17,11 @@ AlgorithmInfo::AlgorithmInfo( crypt_wrapper::CryptAlgorithm algorithm )
                init_aes_256_gcm();
                break;
           }
+          case CA_Aes_256_Cbc:
+          {
+               init_aes_256_cbc();
+               break;
+          }
 
           default:
           {
@@ -97,6 +102,23 @@ int AlgorithmInfo::get_auth_tag_type() const
 int AlgorithmInfo::set_auth_tag_type() const
 {
      return set_auth_tag_type_;
+}
+
+
+void AlgorithmInfo::init_aes_256_cbc()
+{
+     if( chippers.count( CA_Aes_256_Cbc ) == 0 )
+     {
+          chipper_ = chippers.insert( { CA_Aes_256_Cbc, EVP_aes_256_cbc() } ).first->second;
+     }
+     else
+     {
+          chipper_ = chippers[ CA_Aes_256_Cbc ];
+     }
+     key_size_ = EVP_CIPHER_key_length( chipper_ );
+     block_size_ = EVP_CIPHER_block_size( chipper_ );
+     iv_size_ = EVP_CIPHER_iv_length( chipper_ );
+     auth_tag_size_ = 0;
 }
 
 }
