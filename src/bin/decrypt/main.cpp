@@ -65,7 +65,7 @@ int main()
      }
 
 
-     crypt_wrapper::AlgorithmInfo info( crypt_wrapper::CA_Des_Ecb );
+     crypt_wrapper::AlgorithmInfo info( crypt_wrapper::CA_Camelia_192_Cfb128 );
      crypt_wrapper::DecryptWrapper wrapper( info );
 
      try

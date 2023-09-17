@@ -27,6 +27,11 @@ AlgorithmInfo::AlgorithmInfo( crypt_wrapper::CryptAlgorithm algorithm )
                init_des_ecb();
                break;
           }
+          case CA_Camelia_192_Cfb128:
+          {
+               init_camelia_192();
+               break;
+          }
 
           default:
           {
@@ -135,6 +140,24 @@ void AlgorithmInfo::init_des_ecb()
      else
      {
           chipper_ = chippers[ CA_Des_Ecb ];
+     }
+     key_size_ = EVP_CIPHER_key_length( chipper_ );
+     block_size_ = EVP_CIPHER_block_size( chipper_ );
+     iv_size_ = EVP_CIPHER_iv_length( chipper_ );
+     auth_tag_size_ = 0;
+}
+
+
+void AlgorithmInfo::init_camelia_192()
+{
+
+     if( chippers.count( CA_Camelia_192_Cfb128 ) == 0 )
+     {
+          chipper_ = chippers.insert( { CA_Camelia_192_Cfb128, EVP_camellia_192_cfb128() } ).first->second;
+     }
+     else
+     {
+          chipper_ = chippers[ CA_Camelia_192_Cfb128 ];
      }
      key_size_ = EVP_CIPHER_key_length( chipper_ );
      block_size_ = EVP_CIPHER_block_size( chipper_ );

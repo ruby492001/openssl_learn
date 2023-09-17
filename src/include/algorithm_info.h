@@ -11,7 +11,8 @@ enum CryptAlgorithm
      CA_Undefined,
      CA_Aes_256_Gcm,
      CA_Aes_256_Cbc,
-     CA_Des_Ecb
+     CA_Des_Ecb,
+     CA_Camelia_192_Cfb128
 };
 
 
@@ -34,6 +35,7 @@ private:
      void init_aes_256_gcm();
      void init_aes_256_cbc();
      void init_des_ecb();
+     void init_camelia_192();
 private:
      int key_size_ = 0;
      int block_size_ = 0;
