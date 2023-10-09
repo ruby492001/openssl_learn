@@ -44,8 +44,9 @@ int main( int argc, char** argv )
      }
 
      // устанавливаем обязательную проверку сертификата сервера
+     SSL_CTX_set_verify( ctx, SSL_VERIFY_PEER, nullptr );
      // устанавливаем функцию обратного вызова
-     SSL_CTX_set_verify( ctx, SSL_VERIFY_PEER, verify_callback );
+     //SSL_CTX_set_verify( ctx, SSL_VERIFY_PEER, verify_callback );
 
      // устанавливаем флаг автоматической обработки ошибок SSL_ERROR_WANT_READ и SSL_ERROR_WANT_WRITE
      SSL_CTX_set_mode( ctx, SSL_MODE_AUTO_RETRY );
@@ -56,10 +57,10 @@ int main( int argc, char** argv )
      //X509_STORE_set_flags( x509_store, X509_V_FLAG_CRL_CHECK );
 
      // активируем TLS-расширение Certificate Status Request
-     SSL_CTX_set_tlsext_status_type( ctx, TLSEXT_STATUSTYPE_ocsp );
+     //SSL_CTX_set_tlsext_status_type( ctx, TLSEXT_STATUSTYPE_ocsp );
 
      // устанавливаем callback для обработки вшивания OCSP:
-     SSL_CTX_set_tlsext_status_cb( ctx, ocsp_callback );
+     //SSL_CTX_set_tlsext_status_cb( ctx, ocsp_callback );
 
      // создаем SSL BIO
      BIO* ssl_bio = BIO_new_ssl_connect( ctx );
