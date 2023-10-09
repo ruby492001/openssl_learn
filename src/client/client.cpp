@@ -1,5 +1,6 @@
-#include "openssl/ssl.h"
+#include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/x509_vfy.h>
 #include <iostream>
 
 #include "help_func.h"
@@ -48,6 +49,11 @@ int main( int argc, char** argv )
 
      // устанавливаем флаг автоматической обработки ошибок SSL_ERROR_WANT_READ и SSL_ERROR_WANT_WRITE
      SSL_CTX_set_mode( ctx, SSL_MODE_AUTO_RETRY );
+
+     // устанавливаем функкию проверки CRL
+     X509_STORE* x509_store = SSL_CTX_get_cert_store( ctx );
+     X509_STORE_set_lookup_crls( x509_store, lookup_crls );
+     X509_STORE_set_flags( x509_store, X509_V_FLAG_CRL_CHECK_ALL | X509_V_FLAG_CRL_CHECK );
 
      // создаем SSL BIO
      BIO* ssl_bio = BIO_new_ssl_connect( ctx );
