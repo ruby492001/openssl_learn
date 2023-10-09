@@ -61,10 +61,6 @@ int verify_callback( int preverify_ok, X509_STORE_CTX* x509_store_ctx )
                     "Issuer: " << issuer << '\n' <<
                     "Serial number: " << serial_num << "\n" << std::endl;
 
-     if( depth == 1 && subject != "CN = Intermediate_1" )
-     {
-          return 0;
-     }
      return preverify_ok;
 }
 
