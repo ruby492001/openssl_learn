@@ -52,8 +52,14 @@ int main( int argc, char** argv )
 
      // устанавливаем функкию проверки CRL
      X509_STORE* x509_store = SSL_CTX_get_cert_store( ctx );
-     X509_STORE_set_lookup_crls( x509_store, lookup_crls );
-     X509_STORE_set_flags( x509_store, X509_V_FLAG_CRL_CHECK_ALL | X509_V_FLAG_CRL_CHECK );
+     //X509_STORE_set_lookup_crls( x509_store, lookup_crls );
+     //X509_STORE_set_flags( x509_store, X509_V_FLAG_CRL_CHECK );
+
+     // активируем TLS-расширение Certificate Status Request
+     SSL_CTX_set_tlsext_status_type( ctx, TLSEXT_STATUSTYPE_ocsp );
+
+     // устанавливаем callback для обработки вшивания OCSP:
+     SSL_CTX_set_tlsext_status_cb( ctx, ocsp_callback );
 
      // создаем SSL BIO
      BIO* ssl_bio = BIO_new_ssl_connect( ctx );

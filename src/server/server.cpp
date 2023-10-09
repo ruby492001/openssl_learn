@@ -117,11 +117,6 @@ void handle_accepted_connection( BIO* ssl_bio )
      }
 
      // освобождаем память
-     int t =  SSL_get_shutdown( ssl );
-//     if( & SSL_RECEIVED_SHUTDOWN )
-//     {
-//
-//     }
      BIO_free( ssl_bio );
      delete[] in_buf;
 }

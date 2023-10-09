@@ -9,6 +9,7 @@
 int verify_callback( int preverify_ok, X509_STORE_CTX* x509_store_ctx );
 std::string ASN1_INTEGER_to_string( ASN1_INTEGER* serial_number );
 std::string X509_NAME_to_string( const X509_NAME* name );
+std::string OCSP_RESPONSE_to_string( OCSP_RESPONSE* response );
 
 // функция обратного вызова для проверки crl
 STACK_OF(X509_CRL)* lookup_crls( const X509_STORE_CTX* x509_store_ctx, const X509_NAME* x509_name );
@@ -21,3 +22,7 @@ X509_CRL* download_crl_from_http_url( const std::string& url );
 
 // функция загрузки crl из файла
 X509_CRL* load_crl_from_local( const std::string& url );
+
+// функция проверки по протоколу ocsp
+// @return >0 - всё ок, 0 - плохой OCSP ответ, <0 - возникла ошибка
+int ocsp_callback( SSL* ssl, void* arg );

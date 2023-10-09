@@ -1,5 +1,6 @@
 #include "help_func.h"
 #include <openssl/x509v3.h>
+#include "openssl/ocsp.h"
 
 
 std::string X509_NAME_to_string( const X509_NAME* name )
@@ -24,6 +25,24 @@ std::string ASN1_INTEGER_to_string( ASN1_INTEGER* serial_number )
      OPENSSL_free( hex );
      return res;
 }
+
+
+std::string OCSP_RESPONSE_to_string( OCSP_RESPONSE* response )
+{
+     BIO* debug_bio = BIO_new( BIO_s_mem() );
+     OCSP_RESPONSE_print( debug_bio, response, 0 );
+     unsigned char* debug_buffer;
+     std::string result;
+     long data_size = BIO_get_mem_data( debug_bio, &debug_buffer );
+     if( data_size > 0 && debug_buffer )
+     {
+          result = std::string( debug_buffer, debug_buffer + data_size );
+     }
+
+     BIO_free( debug_bio );
+     return result;
+}
+
 
 int verify_callback( int preverify_ok, X509_STORE_CTX* x509_store_ctx )
 {
@@ -174,3 +193,102 @@ X509_CRL* load_crl_from_local( const std::string& url )
      return crl;
 }
 
+
+int ocsp_callback( SSL* ssl, void* arg )
+{
+     int exit_code = 1;
+     const unsigned char* resp = nullptr;
+
+     // получаем oscp ответ
+     long resp_len = SSL_get_tlsext_status_ocsp_resp( ssl, &resp );
+     if( resp_len <= 0 || !resp )
+     {
+          std::cerr << "Oscp response is invalid!" << std::endl;
+          return exit_code;
+     }
+
+     // декодируем из DER в OCSP_RESPONSE
+     OCSP_RESPONSE* ocsp_response = d2i_OCSP_RESPONSE( nullptr, &resp, resp_len );
+     if( !ocsp_response )
+     {
+          std::cerr << "OCSP response is null" << std::endl;
+          return exit_code;
+     }
+
+     // отладочный вывод
+     std::cout << "\n" << OCSP_RESPONSE_to_string( ocsp_response ) << "\n" << std::endl;
+
+     // проверяем код состояния OCSP
+     int res = OCSP_response_status( ocsp_response );
+     if( res != OCSP_RESPONSE_STATUS_SUCCESSFUL )
+     {
+          std::cerr << "Validate OCSP response status error. Status: " << res << std::endl;
+          return exit_code;
+     }
+
+     // проверяем подпись OCSP-ответа
+     OCSP_BASICRESP* ocsp_basicres = OCSP_response_get1_basic( ocsp_response );
+     STACK_OF( X509 )* verified_chain = SSL_get0_verified_chain( ssl );
+     SSL_CTX* ctx = SSL_get_SSL_CTX( ssl );
+     X509_STORE* x509_store = SSL_CTX_get_cert_store( ctx );
+     res = OCSP_basic_verify( ocsp_basicres, verified_chain, x509_store, 0 );
+     if( res != 1 )
+     {
+          std::cerr << "Error on validate OCSP sign" << std::endl;
+          return exit_code;
+     }
+
+     // поиск состояния сертификата TLS-сервера
+     X509* server_cert = sk_X509_value( verified_chain, 0 );
+     X509* issuer_cert = sk_X509_value( verified_chain, 1 );
+     OCSP_CERTID* server_cert_id = OCSP_cert_to_id( nullptr, server_cert, issuer_cert );
+     ASN1_GENERALIZEDTIME* revocation_time = nullptr;
+     ASN1_GENERALIZEDTIME* this_update_time = nullptr;
+     ASN1_GENERALIZEDTIME* next_update_time = nullptr;
+     int revocation_status = V_OCSP_CERTSTATUS_UNKNOWN;
+     int revocation_reason = OCSP_REVOKED_STATUS_NOSTATUS;
+     res = OCSP_resp_find_status( ocsp_basicres, server_cert_id, &revocation_status, &revocation_reason,
+                                  &revocation_time, &this_update_time, &next_update_time );
+     if( res != 1 )
+     {
+          std::cerr << "Find OCSP server cert status error" << std::endl;
+          return exit_code;
+     }
+
+     // проверяем, что ответ езё валидный
+     res = OCSP_check_validity( this_update_time, next_update_time, 300, -1 );
+     if( res != 1 )
+     {
+          std::cerr << "Check OCSP validity error" << std::endl;
+          return exit_code;
+     }
+
+     // проверяем состояние отзыва сертификата
+     switch( revocation_status )
+     {
+          case V_OCSP_CERTSTATUS_REVOKED:
+          {
+               std::cout << "OCSP cert status is revoked" << std::endl;
+               exit_code = 0;
+               break;
+          }
+          case V_OCSP_CERTSTATUS_GOOD:
+          {
+               std::cout << "OCSP cert status is good" << std::endl;
+               break;
+          }
+          default:
+          {
+               std::cout << "OCSP cert status is undefined" << std::endl;
+               break;
+          }
+     }
+     if( server_cert_id )
+     {
+          OCSP_CERTID_free( server_cert_id );
+          OCSP_BASICRESP_free( ocsp_basicres );
+          OCSP_RESPONSE_free( ocsp_response );
+     }
+
+     return exit_code;
+}
