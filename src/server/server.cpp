@@ -63,6 +63,7 @@ void handle_accepted_connection( BIO* ssl_bio )
      const size_t buf_size = 1024 * 4;
      unsigned char* in_buf = new unsigned char[ buf_size ];
      std::string result;
+     bool error_occur = false;
      while( !exit_flag )
      {
           int nbytes_read = BIO_read( ssl_bio, in_buf, buf_size );
@@ -76,7 +77,8 @@ void handle_accepted_connection( BIO* ssl_bio )
                int ssl_error = SSL_get_error( ssl, nbytes_read );
                if( ssl_error != SSL_ERROR_ZERO_RETURN )
                {
-                    std::cerr << "Error in read data from client: " << ssl_error;
+                    std::cerr << "Error in read data from client: " << ssl_error << std::endl;
+                    error_occur = true;
                }
                break;
           }
@@ -104,15 +106,23 @@ void handle_accepted_connection( BIO* ssl_bio )
           if( bytes_written != answer.size() )
           {
                std::cerr << "Error send data to client" << std::endl;
+               error_occur = true;
           }
           std::cout << "Data was sent to client" << std::endl;
      }
-
-     // закрываем соединение
-     BIO_ssl_shutdown( ssl_bio );
+     if( !error_occur )
+     {
+          // закрываем соединение
+          BIO_ssl_shutdown( ssl_bio );
+     }
 
      // освобождаем память
-     BIO_free_all( ssl_bio );
+     int t =  SSL_get_shutdown( ssl );
+//     if( & SSL_RECEIVED_SHUTDOWN )
+//     {
+//
+//     }
+     BIO_free( ssl_bio );
      delete[] in_buf;
 }
 
@@ -127,8 +137,13 @@ void handle_connection( BIO* ssl_bio )
 
 
 
-void signal_handler( int )
+void signal_handler( int signal )
 {
+     if( signal == SIGPIPE )
+     {
+          std::cerr << "SIGPIPE received" << std::endl;
+          return;
+     }
      std::cout << "Interrupted!" << std::endl;
      exit_flag = true;
 }
@@ -150,8 +165,13 @@ int main( int argc, char** argv )
                return false;
           }
           sigaddset( &sa.sa_mask, SIGINT );
+          sigaddset( &sa.sa_mask, SIGPIPE );
 
           if( sigaction( SIGINT, &sa, nullptr ) < 0 )
+          {
+               return false;
+          }
+          if( sigaction( SIGPIPE, &sa, nullptr ) < 0 )
           {
                return false;
           }
@@ -261,7 +281,7 @@ int main( int argc, char** argv )
           BIO_push( ssl_bio, current_socket );
 
           // обрабатываем соединение
-          handle_accepted_connection( ssl_bio );
+          handle_connection( ssl_bio );
      }
      BIO_free( accept_bio );
      // завершаем потоки
