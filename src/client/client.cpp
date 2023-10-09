@@ -1,24 +1,86 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509_vfy.h>
+#include <openssl/pkcs12.h>
 #include <iostream>
 
 #include "help_func.h"
 
+int load_client_certificate( const std::string& client_cert_path, const std::string& client_cert_pwd, SSL_CTX* ctx )
+{
+     // открываем файл с клиентским сертификатов в формате pkcs12
+     BIO* client_cert_bio = BIO_new_file( client_cert_path.c_str(), "rb" );
+     if( !client_cert_bio )
+     {
+          std::cerr << "Error create cert bio" << std::endl;
+          return 0;
+     }
+     // загружаем файл в объект PKCS12
+     PKCS12* pkcs12 = d2i_PKCS12_bio( client_cert_bio, nullptr );
+     if( !pkcs12 )
+     {
+          std::cerr << "Error d2i" << std::endl;
+          return 0;
+     }
+
+     // проверяем пароль
+     int res = PKCS12_verify_mac( pkcs12, client_cert_pwd.c_str(), client_cert_pwd.size() );
+     if( res != 1 )
+     {
+          std::cerr << "Invalid password!" << std::endl;
+          return 0;
+     }
+
+     EVP_PKEY* private_key = nullptr;
+     X509* client_cert = nullptr;
+     STACK_OF( X509 )* intermediate_certs = nullptr;
+
+     // расшифровываем PKCS12
+     res = PKCS12_parse( pkcs12, client_cert_pwd.c_str(), &private_key, &client_cert, &intermediate_certs );
+     if( res != 1 )
+     {
+          std::cerr << "PKCS12 parse error" << std::endl;
+          return 0;
+     }
+
+     // устанавливаем сертификат пользователя, закрытый ключ и промежуточные сертификаты
+     res = SSL_CTX_use_cert_and_key( ctx, client_cert, private_key, intermediate_certs, 1 );
+     if( res != 1 )
+     {
+          std::cerr << "Set use certs and key error" << std::endl;
+          return 0;
+     }
+
+     // проверяем соответствие сертификата и приватного ключа
+     res = SSL_CTX_check_private_key( ctx );
+     if( res != 1 )
+     {
+          std::cerr << "Validate private key error" << std::endl;
+          return 0;
+     }
+
+     // очищаем память
+     sk_X509_pop_free( intermediate_certs, X509_free );
+     X509_free( client_cert );
+     EVP_PKEY_free( private_key );
+     PKCS12_free( pkcs12 );
+     BIO_free( client_cert_bio );
+     return 1;
+}
+
 int main( int argc, char** argv )
 {
-     if( argc < 3 )
+     if( argc < 6 )
      {
           std::cerr << "Invalid usage";
           return -1;
      }
      const std::string address = argv[ 1 ];
      const std::string port = argv[ 2 ];
-     std::string cert_path;
-     if( argc > 3 )
-     {
-          cert_path = argv[ 3 ];
-     }
+     const std::string ca_cert_path = argv[ 3 ];
+     const std::string client_pksc_path = argv[ 4 ];
+     const std::string client_pksc_pass = argv[ 5 ];
+
      // выделяем буферы для чтения и записи
      const size_t buf_size  = 16 * 1024;
      unsigned char* in_buf = new unsigned char[ buf_size ];
@@ -26,40 +88,38 @@ int main( int argc, char** argv )
      // создаем контекст SSL
      SSL_CTX* ctx = SSL_CTX_new( TLS_client_method() );
 
-     int err = 0;
-     if( cert_path.empty() )
-     {
-          // загружаем корневые сертификаты из путей по умолчанию
-          err = SSL_CTX_set_default_verify_paths( ctx );
-     }
-     else
-     {
-          // загружаем сертификат из файла
-          err = SSL_CTX_load_verify_file( ctx, cert_path.c_str() );
-     }
+     // загружаем корневой сертификат из файла
+     int err = SSL_CTX_load_verify_file( ctx, ca_cert_path.c_str() );
      if( err <= 0 )
      {
           std::cerr << "Error load trusted cert!";
           return -1;
      }
+     err = load_client_certificate( client_pksc_path, client_pksc_pass, ctx );
+     if( err <= 0 )
+     {
+          std::cerr << "Error load client cert!";
+          return -1;
+     }
 
      // устанавливаем обязательную проверку сертификата сервера
      // устанавливаем функцию обратного вызова
-     SSL_CTX_set_verify( ctx, SSL_VERIFY_PEER, verify_callback );
+     //SSL_CTX_set_verify( ctx, SSL_VERIFY_PEER, verify_callback );
+     SSL_CTX_set_verify( ctx, SSL_VERIFY_PEER, nullptr );
 
      // устанавливаем флаг автоматической обработки ошибок SSL_ERROR_WANT_READ и SSL_ERROR_WANT_WRITE
      SSL_CTX_set_mode( ctx, SSL_MODE_AUTO_RETRY );
 
-     // устанавливаем функкию проверки CRL
-     X509_STORE* x509_store = SSL_CTX_get_cert_store( ctx );
+     // устанавливаем функцию проверки CRL
+     //X509_STORE* x509_store = SSL_CTX_get_cert_store( ctx );
      //X509_STORE_set_lookup_crls( x509_store, lookup_crls );
      //X509_STORE_set_flags( x509_store, X509_V_FLAG_CRL_CHECK );
 
      // активируем TLS-расширение Certificate Status Request
-     SSL_CTX_set_tlsext_status_type( ctx, TLSEXT_STATUSTYPE_ocsp );
+     //SSL_CTX_set_tlsext_status_type( ctx, TLSEXT_STATUSTYPE_ocsp );
 
      // устанавливаем callback для обработки вшивания OCSP:
-     SSL_CTX_set_tlsext_status_cb( ctx, ocsp_callback );
+     //SSL_CTX_set_tlsext_status_cb( ctx, ocsp_callback );
 
      // создаем SSL BIO
      BIO* ssl_bio = BIO_new_ssl_connect( ctx );

@@ -6,6 +6,7 @@
 #include <thread>
 
 #include "iostream"
+#include "../client/help_func.h"
 
 bool exit_flag = false;
 
@@ -46,12 +47,28 @@ EVP_PKEY* load_private_key( const std::string& path )
 }
 
 
+void print_client_cert( const SSL* conn )
+{
+     // получаем клиентский сертификат
+     X509* peer_cert = SSL_get_peer_certificate( conn );
+     if( peer_cert )
+     {
+          X509_NAME* peer_cert_subject = X509_get_subject_name( peer_cert );
+          std::cout << "Connected: " << X509_NAME_to_string( peer_cert_subject ) << std::endl;
+     }
+     else
+     {
+          std::cout << "Connected uncertified client" << std::endl;
+     }
+}
+
+
 void handle_accepted_connection( BIO* ssl_bio )
 {
      int err = BIO_do_handshake( ssl_bio );
      if( err <= 0 )
      {
-          std::cerr << "Error handshake connection!";
+          std::cerr << "Error handshake connection!" << std::endl;
           return;
      }
 
@@ -59,6 +76,8 @@ void handle_accepted_connection( BIO* ssl_bio )
      SSL* ssl = nullptr;
      BIO_get_ssl( ssl_bio, &ssl );
 
+     // печатаем информацию о сертификате
+     print_client_cert( ssl );
 
      const size_t buf_size = 1024 * 4;
      unsigned char* in_buf = new unsigned char[ buf_size ];
@@ -186,8 +205,9 @@ int main( int argc, char** argv )
      const std::string port_value = argv[ 1 ];
      const std::string private_key_path = argv[ 2 ];
      const std::string server_cert_path = argv[ 3 ];
+     const std::string trusted_ca_cert_path = argv[ 4 ];
      std::vector< std::string > cert_files_path;
-     for( int idx = 4; idx < argc; idx++ )
+     for( int idx = 5; idx < argc; idx++ )
      {
           cert_files_path.emplace_back(argv[ idx ] );
      }
@@ -231,6 +251,17 @@ int main( int argc, char** argv )
           }
           return -1;
      }
+
+     // устанавливаем требование на клиентские сертификаты
+     err = SSL_CTX_load_verify_file( ctx, trusted_ca_cert_path.c_str() );
+     if( err <= 0 )
+     {
+          std::cerr << "Error load trusted ca" << std::endl;
+          return -1;
+     }
+
+     // устанавливаем проверку клиентского сертификата(SSL_VERIFY_PEER - запрос сертификата, SSL_VERIFY_FAIL_IF_NO_PEER_CERT = ошибка при непредъявлении сертификата)
+     SSL_CTX_set_verify( ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, nullptr );
 
      // аналогично клиенту устанавливаем SSL_MODE_AUTO_RETRY
      SSL_CTX_set_mode( ctx, SSL_MODE_AUTO_RETRY );
