@@ -2,8 +2,53 @@
 #include <openssl/err.h>
 #include <openssl/x509_vfy.h>
 #include <iostream>
+#include <vector>
 
 #include "help_func.h"
+
+/// @param mem_rbio - BIO памяти, откуда SSL читает шифртекст
+/// @param mem_wbio - BIO памяти, куда SSL записывет шифртекст
+/// @param tcp_bio - BIO подключения, который читает и записывает в сеть
+/// @param want_read - true - происходит не только запись данных в сеть, но и чтение из сети
+/// @refurn 1 - в случае успеха, иначе false
+int service_bios( BIO* mem_rbio, BIO* mem_wbio, BIO* tcp_bio, bool want_read )
+{
+     std::vector< char > buffer;
+     buffer.resize( 16 * 1024 );
+
+     // записываем ожидающие данные в сеть
+     while( BIO_pending( mem_wbio ) )
+     {
+          int nbytes_read = BIO_read( mem_wbio, &buffer[ 0 ], buffer.size() );
+          int nbytes_written_total = 0;
+          while( nbytes_written_total < nbytes_read )
+          {
+               int nbytes_written = BIO_write( tcp_bio, &buffer[ 0 ] + nbytes_written_total, nbytes_read - nbytes_written_total );
+               if( nbytes_written > 0 )
+               {
+                    nbytes_written_total += nbytes_written;
+                    continue;
+               }
+               std::cerr << "Error write data to socket" << std::endl;
+               return 0;
+          }
+     }
+     if( want_read )
+     {
+          int nbytes_read = BIO_read( tcp_bio, &buffer[ 0 ], buffer.size() );
+          if( nbytes_read > 0 )
+          {
+               BIO_write( mem_rbio, &buffer[ 0 ], nbytes_read );
+          }
+          else
+          {
+               std::cerr << "Error read data from socket" << std::endl;
+               return 0;
+          }
+     }
+     return 1;
+}
+
 
 int main( int argc, char** argv )
 {
@@ -45,33 +90,34 @@ int main( int argc, char** argv )
 
      // устанавливаем обязательную проверку сертификата сервера
      SSL_CTX_set_verify( ctx, SSL_VERIFY_PEER, nullptr );
-     // устанавливаем функцию обратного вызова
-     //SSL_CTX_set_verify( ctx, SSL_VERIFY_PEER, verify_callback );
 
-     // устанавливаем флаг автоматической обработки ошибок SSL_ERROR_WANT_READ и SSL_ERROR_WANT_WRITE
-     SSL_CTX_set_mode( ctx, SSL_MODE_AUTO_RETRY );
+     // устаналиваем TCP соединение
+     BIO* tcp_bio = BIO_new_connect( address.c_str() );
+     BIO_set_conn_port( tcp_bio, port.c_str() );
 
-     // устанавливаем функкию проверки CRL
-     X509_STORE* x509_store = SSL_CTX_get_cert_store( ctx );
-     //X509_STORE_set_lookup_crls( x509_store, lookup_crls );
-     //X509_STORE_set_flags( x509_store, X509_V_FLAG_CRL_CHECK );
+     err = BIO_do_connect( tcp_bio );
+     if( err <= 0 )
+     {
+          std::cerr << "Error connect to server";
+          return -1;
+     }
 
-     // активируем TLS-расширение Certificate Status Request
-     //SSL_CTX_set_tlsext_status_type( ctx, TLSEXT_STATUSTYPE_ocsp );
+     // создаём читающий BIO
+     BIO* mem_rbio = BIO_new( BIO_s_mem() );
 
-     // устанавливаем callback для обработки вшивания OCSP:
-     //SSL_CTX_set_tlsext_status_cb( ctx, ocsp_callback );
+     // чтобы избежать ошибки конца файла в случае пустого BIO
+     BIO_set_mem_eof_return( mem_rbio, -1 );
 
-     // создаем SSL BIO
-     BIO* ssl_bio = BIO_new_ssl_connect( ctx );
-     BIO_set_conn_hostname( ssl_bio, address.c_str() );
+     // создаем записывающий BIO
+     BIO* mem_wbio = BIO_new( BIO_s_mem() );
+     BIO_set_mem_eof_return( mem_wbio, -1 );
 
-     // задаем адресс и порт удаленного сервера
-     BIO_set_conn_port( ssl_bio, port.c_str() );
+     // создаем объект TLS
+     SSL* ssl = SSL_new( ctx );
 
-     // извлекаем SSL из SSL BIO
-     SSL* ssl = nullptr;
-     BIO_get_ssl( ssl_bio, &ssl );
+     // присоединяем читающий и пишущий BIO
+     SSL_set_bio( ssl, mem_rbio, mem_wbio );
+
 
      // для расширения SNI(для случаев с общим хостингом) задаем имя хоста
      SSL_set_tlsext_host_name( ssl, address.c_str() );
@@ -79,26 +125,29 @@ int main( int argc, char** argv )
      // имя сервера для проверки сертификата по CN
      SSL_set1_host( ssl, address.c_str() );
 
-     // устанавливаем "тестовые" данные, до которых можно достучаться из функции обратного вызова
-     const std::string test_str = "This is test str!";
-     SSL_set_app_data( ssl, &test_str );
-
-     // устанавливаем TLS-соединение
-     err = BIO_do_connect( ssl_bio );
+     // tls квитированое
+     while( true )
+     {
+          err = SSL_connect( ssl );
+          int ssl_error = SSL_get_error( ssl, err );
+          if( ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE || BIO_pending( mem_wbio ) )
+          {
+               int service_bios_err = service_bios( mem_rbio, mem_wbio, tcp_bio, SSL_want_read( ssl ) );
+               if( service_bios_err != 1 )
+               {
+                    std::cerr << "Error in TLS handshake" << std::endl;
+                    return -1;
+               }
+               continue;
+          }
+          break;
+     }
      if( err <= 0 )
      {
-          std::cerr << "Error connect to server" << std::endl;
-          int err_code = ERR_peek_error();
-          if( err_code )
-          {
-               char error[ 512 ];
-
-               std::cerr << "Error from openssl: " << ERR_error_string( sizeof( error ), error ) << std::endl;
-               std::cerr << ERR_reason_error_string( err_code ) << std::endl;
-          }
-          ERR_clear_error();
+          std::cerr << "Error in TLS handshake: " << SSL_get_error( ssl, err ) << std::endl;
           return -1;
      }
+
      while( true )
      {
           std::cout << "Enter data to send" << std::endl;
@@ -106,36 +155,73 @@ int main( int argc, char** argv )
 
           std::cin >> data_to_send;
           data_to_send += "\n";
-          int nbytes_written = BIO_write( ssl_bio, data_to_send.c_str(), data_to_send.size() );
-          if( nbytes_written != data_to_send.size() )
+
+          int nbytes_written_total = 0;
+          while( nbytes_written_total < data_to_send.size() )
           {
-               std::cerr << "Write data error";
-               break;
+               int nbytes_written = SSL_write( ssl, data_to_send.c_str() + nbytes_written_total, data_to_send.size() - nbytes_written_total );
+               if( nbytes_written > 0 )
+               {
+                    nbytes_written_total += nbytes_written;
+                    continue;
+               }
+               int ssl_error = SSL_get_error( ssl, err );
+               if( ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE || BIO_pending( mem_wbio ) )
+               {
+                    int service_bios_err = service_bios( mem_rbio, mem_wbio, tcp_bio, SSL_want_read( ssl ) );
+                    if( service_bios_err != 1 )
+                    {
+                         std::cerr << "Service bios error" << std::endl;
+                         return -1;
+                    }
+                    continue;
+               }
+               std::cerr << "Error send data to server: " << ssl_error << std::endl;
+               return -1;
           }
 
           bool result = false;
           std::string response;
           while( true )
           {
-               int nbytes_read = BIO_read( ssl_bio, in_buf, buf_size );
-               if( nbytes_read <= 0 )
+               int service_bios_err = 1;
+               if( !BIO_pending( mem_rbio ) )
                {
-                    int ssl_error = SSL_get_error( ssl, nbytes_read );
-                    if( ssl_error != SSL_ERROR_ZERO_RETURN )
-                    {
-                         std::cerr << "Error in read data from server: " << ssl_error;
-                    }
+                    service_bios_err = service_bios( mem_rbio, mem_wbio, tcp_bio, true );
+               }
+               if( service_bios_err != 1 )
+               {
+                    std::cerr << "Error read from socket" << std::endl;
                     break;
+               }
+               int nbytes_read = SSL_read( ssl, in_buf, buf_size );
+               if( nbytes_read > 0 )
+               {
+                    response.append( in_buf, in_buf + nbytes_read );
+                    if( response.at( response.size() - 1 ) == '\n' )
+                    {
+                         std::cout << "Server answer!" << std::endl;
+                         std::cout << response;
+                         result = true;
+                         break;
+                    }
+                    continue;
                }
 
-               response.append( in_buf, in_buf + nbytes_read );
-               if( !response.empty() && response.at( response.size() - 1 ) == '\n')
+               int ssl_error = SSL_get_error( ssl, err );
+               if( ssl_error == SSL_ERROR_NONE || ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE ||
+                       BIO_pending( mem_wbio ) )
                {
-                    std::cout << "Server answer!" << std::endl;
-                    std::cout << response;
-                    result = true;
+                    continue;
+               }
+
+               if( ssl_error == SSL_ERROR_ZERO_RETURN )
+               {
+                    std::cerr << "Connection closed by server" << std::endl;
                     break;
                }
+               std::cerr << "TLS error: " << ssl_error << std::endl;
+               break;
           }
           if( !result )
           {
@@ -143,18 +229,33 @@ int main( int argc, char** argv )
           }
      }
 
-     // закрываем нашу сторону соединения
-     BIO_ssl_shutdown( ssl_bio );
+     // размыкаем соединение
+     while( true )
+     {
+          err = SSL_shutdown( ssl );
+          int ssl_error = SSL_get_error( ssl, err );
+          if( ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE || BIO_pending( mem_wbio ) )
+          {
+               int service_bios_err = service_bios( mem_rbio, mem_wbio, tcp_bio, SSL_want_read( ssl ) );
+               if( service_bios_err != 1 )
+               {
+                    std::cerr << "Service bios error" << std::endl;
+                    return -1;
+               }
+               continue;
+          }
+          break;
+     }
+     if( err != 1 )
+     {
+          std::cerr << "Error TLS shutdown" << std::endl;
+          return -1;
+     }
 
-     // освобождаем ресурсы
-     if( ssl_bio )
-     {
-          BIO_free_all( ssl_bio );
-     }
-     if( ctx )
-     {
-          SSL_CTX_free( ctx );
-     }
+     SSL_free( ssl );
+     BIO_free( tcp_bio );
+     SSL_CTX_free( ctx );
+
      delete[] in_buf;
 
      return 0;
