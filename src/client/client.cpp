@@ -20,7 +20,7 @@ int main( int argc, char** argv )
           cert_path = argv[ 3 ];
      }
      // выделяем буферы для чтения и записи
-     const size_t buf_size  = 16 * 1024;
+     const size_t buf_size = 3;
      unsigned char* in_buf = new unsigned char[ buf_size ];
 
      // создаем контекст SSL
@@ -83,8 +83,24 @@ int main( int argc, char** argv )
      const std::string test_str = "This is test str!";
      SSL_set_app_data( ssl, &test_str );
 
+     // устанавливаем неблокирующий режим
+     BIO_set_nbio( ssl_bio, 1 );
+
+     // определяем переменный тайм-аута
+     const unsigned int nap_ms = 100;
+
      // устанавливаем TLS-соединение
      err = BIO_do_connect( ssl_bio );
+     while( err <= 0 && BIO_should_retry( ssl_bio ) )
+     {
+          int wait_err = BIO_wait( ssl_bio, 0, nap_ms );
+          if( wait_err != 1 )
+          {
+               break;
+          }
+          err = BIO_do_connect( ssl_bio );
+     }
+
      if( err <= 0 )
      {
           std::cerr << "Error connect to server" << std::endl;
@@ -99,6 +115,7 @@ int main( int argc, char** argv )
           ERR_clear_error();
           return -1;
      }
+
      while( true )
      {
           std::cout << "Enter data to send" << std::endl;
@@ -106,41 +123,87 @@ int main( int argc, char** argv )
 
           std::cin >> data_to_send;
           data_to_send += "\n";
-          int nbytes_written = BIO_write( ssl_bio, data_to_send.c_str(), data_to_send.size() );
-          if( nbytes_written != data_to_send.size() )
+          int nbytes_written_total = 0;
+          while( nbytes_written_total < data_to_send.size() )
           {
-               std::cerr << "Write data error";
-               break;
+               int nbytes_written = BIO_write( ssl_bio, data_to_send.c_str() + nbytes_written_total, data_to_send.size() - nbytes_written_total );
+               if( nbytes_written > 0 )
+               {
+                    nbytes_written_total += nbytes_written;
+                    continue;
+               }
+               if( BIO_should_retry( ssl_bio ) )
+               {
+                    int wait_error = BIO_wait( ssl_bio, 0, nap_ms );
+                    if( wait_error == 1 )
+                    {
+                         continue;
+                    }
+                    else if( wait_error == 0 )
+                    {
+                         std::cerr << "BIO_wait timeout" << std::endl;
+                    }
+                    else
+                    {
+                         std::cerr << "BIO_wait error" << std::endl;
+                    }
+               }
+               std::cerr << "Error write data!" << std::endl;
+               return -1;
           }
 
-          bool result = false;
           std::string response;
+          bool result = true;
           while( true )
           {
                int nbytes_read = BIO_read( ssl_bio, in_buf, buf_size );
-               if( nbytes_read <= 0 )
+               if( nbytes_read > 0 )
                {
-                    int ssl_error = SSL_get_error( ssl, nbytes_read );
-                    if( ssl_error != SSL_ERROR_ZERO_RETURN )
+                    response.append( in_buf, in_buf + nbytes_read );
+                    if( *response.rbegin() == '\n')
                     {
-                         std::cerr << "Error in read data from server: " << ssl_error;
+                         break;
                     }
-                    break;
+                    continue;
+               }
+               if( BIO_should_retry( ssl_bio ) )
+               {
+                    int wait_error = BIO_wait( ssl_bio, 0, nap_ms );
+                    if( wait_error == 1 )
+                    {
+                         continue;
+                    }
+                    else if( wait_error == 0 )
+                    {
+                         std::cerr << "BIO_wait timeout" << std::endl;
+                    }
+                    else
+                    {
+                         std::cerr << "BIO_wait error" << std::endl;
+                    }
+               }
+               else
+               {
+                    std::cerr << "BIO_should_retry return false" << std::endl;
                }
 
-               response.append( in_buf, in_buf + nbytes_read );
-               if( !response.empty() && response.at( response.size() - 1 ) == '\n')
+               result = false;
+               int ssl_error = SSL_get_error( ssl, nbytes_read );
+               if( ssl_error == SSL_ERROR_ZERO_RETURN )
                {
-                    std::cout << "Server answer!" << std::endl;
-                    std::cout << response;
-                    result = true;
-                    break;
+                    std::cout << "TLS connection closed by server" << std::endl;
                }
+               else
+               {
+                    std::cerr << "Error on read data from server: " << ssl_error << std::endl;
+               }
+               break;
           }
           if( !result )
           {
                break;
           }
+          std::cout << "Server response is: \n" << response << std::endl;
      }
 
      // закрываем нашу сторону соединения
