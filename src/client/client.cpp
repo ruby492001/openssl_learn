@@ -5,6 +5,52 @@
 
 #include "help_func.h"
 
+X509* load_fixed_cert( const std::string& cert_path )
+{
+     FILE* file = fopen( cert_path.c_str(), "rb" );
+     if( !file )
+     {
+          return nullptr;
+     }
+     X509* cert = PEM_read_X509( file, nullptr, nullptr, nullptr );
+     fclose( file );
+     return cert;
+}
+
+
+int cert_verify_callback( X509_STORE_CTX* x509_store_ctx, void* arg )
+{
+     // получаем ожидаемый сертификат сервера
+     X509* expected_server_cert = static_cast< X509* >( arg );
+
+     // получаем текущий сертификат сервера
+     X509* current_server_cert = X509_STORE_CTX_get0_cert( x509_store_ctx );
+
+     X509_NAME* expected_cert_subject = X509_get_subject_name( expected_server_cert );
+     X509_NAME* current_cert_subject = X509_get_subject_name( current_server_cert );
+     std::cout << "Expected server cert subject is: " << X509_NAME_to_string( expected_cert_subject ) << std::endl;
+     std::cout << "Current server cert subject is:" << X509_NAME_to_string( current_cert_subject ) << std::endl;
+
+     // прописываем текущий сертификат и его глубину в контексте
+     X509_STORE_CTX_set_current_cert( x509_store_ctx, current_server_cert );
+     X509_STORE_CTX_set_depth( x509_store_ctx, 0 );
+
+     // сравниваем ожидаемый и полученный сертификаты
+     int cmp = X509_cmp( current_server_cert, expected_server_cert );
+     if( cmp == 0 )
+     {
+          std::cout << "Verification completed! Continue..." << std::endl;
+          X509_STORE_CTX_set_error( x509_store_ctx, X509_V_OK );
+          return 1;
+     }
+     else
+     {
+          std::cout << "Verification failed! Aborted" << std::endl;
+          X509_STORE_CTX_set_error( x509_store_ctx, X509_V_ERR_APPLICATION_VERIFICATION );
+          return 0;
+     }
+}
+
 int main( int argc, char** argv )
 {
      if( argc < 3 )
@@ -14,11 +60,8 @@ int main( int argc, char** argv )
      }
      const std::string address = argv[ 1 ];
      const std::string port = argv[ 2 ];
-     std::string cert_path;
-     if( argc > 3 )
-     {
-          cert_path = argv[ 3 ];
-     }
+     const std::string fixed_cert_path = argv[ 3 ];
+
      // выделяем буферы для чтения и записи
      const size_t buf_size  = 16 * 1024;
      unsigned char* in_buf = new unsigned char[ buf_size ];
@@ -26,22 +69,16 @@ int main( int argc, char** argv )
      // создаем контекст SSL
      SSL_CTX* ctx = SSL_CTX_new( TLS_client_method() );
 
-     int err = 0;
-     if( cert_path.empty() )
+     // загружаем закрепленный сертификат сервера
+     X509* server_cert = load_fixed_cert( fixed_cert_path );
+     if( !server_cert )
      {
-          // загружаем корневые сертификаты из путей по умолчанию
-          err = SSL_CTX_set_default_verify_paths( ctx );
-     }
-     else
-     {
-          // загружаем сертификат из файла
-          err = SSL_CTX_load_verify_file( ctx, cert_path.c_str() );
-     }
-     if( err <= 0 )
-     {
-          std::cerr << "Error load trusted cert!";
+          std::cerr << "Load fixed cert error!" << std::endl;
           return -1;
      }
+
+     // устанавливаем "большой" обратный вызов
+     SSL_CTX_set_cert_verify_callback( ctx, cert_verify_callback, server_cert );
 
      // устанавливаем обязательную проверку сертификата сервера
      SSL_CTX_set_verify( ctx, SSL_VERIFY_PEER, nullptr );
@@ -84,7 +121,7 @@ int main( int argc, char** argv )
      SSL_set_app_data( ssl, &test_str );
 
      // устанавливаем TLS-соединение
-     err = BIO_do_connect( ssl_bio );
+     int err = BIO_do_connect( ssl_bio );
      if( err <= 0 )
      {
           std::cerr << "Error connect to server" << std::endl;
@@ -155,6 +192,7 @@ int main( int argc, char** argv )
      {
           SSL_CTX_free( ctx );
      }
+     X509_free( server_cert );
      delete[] in_buf;
 
      return 0;
