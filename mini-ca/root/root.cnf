@@ -1,0 +1,89 @@
+# конфигурационный файл для корневого УЦ
+[ca]
+default_ca = CA_default
+
+[CA_default]
+# база данных сертификатов
+database = index.txt
+
+# каталог записи новых сертификатов
+new_certs_dir = issued
+
+# сертификат текущего УЦ и соответствующий закрытый ключ
+certificate = root_cert.pem
+private_key = private/root_keypair.pem
+
+# необязательные параметры
+default_days = 3650
+
+# обязательный параметр
+default_md = default
+
+# выпуск сертификатов со случайными, а не последовательными номерами
+rand_serial = yes
+
+# выпуск сертификатов с одним и тем же субъектом
+unique_subject = no
+
+# параметры показа сведений о сертификате
+name_opt = ca_default
+cert_opt = ca_default
+
+# секция с политикой по-умолчанию суъекта выпущенного сертификата
+policy = policy_intermediate_cert
+
+# секция с расширениями X509v3
+x509_extensions = v3_intermediate_cert
+
+# разрешаем копирование свойст, которые не были заданы УЦ из CSR
+copy_extensions = copy
+
+# секция конфигурационного файла, содержащего расширения CRL, файлы номеров CRL и срок действия CRL по умолчанию
+crl_extensions = crl_extensions_root_ca
+crlnumber = crlnumber.txt
+default_crl_days = 30
+
+[req]
+prompt = no
+distinguished_name = distinguished_name_root_cert
+x509_extensions = v3_root_cert
+
+[distinguished_name_root_cert]
+countryName = NO
+stateOrProvinceName = Oslo
+localityName = Oslo
+organizationName = TLS Experts
+commonName = Root CA
+
+# политика субъекта выпущенного сертификата
+[policy_intermediate_cert]
+countryName = match
+stateOrProvinceName = match
+localityName = match
+organizationName = match
+#organizationalName = match
+organizationalUnitName = optional
+commonName = supplied
+emailAddress = optional
+
+
+# расширения X509v3 для сертификата корневого УЦ и выпущенного сертификата промежуточного УЦ
+[v3_root_cert]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always, issuer
+basicConstraints = critical, CA:TRUE
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+crlDistributionPoints = URI:http://crl.tls-experts.no/root_crl.der
+
+[v3_intermediate_cert]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always, issuer
+basicConstraints = critical, CA:TRUE, pathlen:0
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+crlDistributionPoints = URI:http://crl.tls-experts.no/root_crl.der
+
+
+# расширения CRL которые добавляются в выпускаемые CRL
+[crl_extensions_root_ca]
+authorityKeyIdentifier = keyid:always, issuer
+crlDistributionPoints = URI:http://crl.tls-experts.no/root_crl.der
